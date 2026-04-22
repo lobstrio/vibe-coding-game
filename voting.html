@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Real-Time Voting</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0A0A0F;
+    font-family: 'Syne', sans-serif;
+    color: #E8E8ED;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    position: relative;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: '';
+    position: absolute;
+    top: -40%; left: -20%;
+    width: 140%; height: 140%;
+    background: radial-gradient(ellipse at 30% 20%, rgba(255,61,0,0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 70% 80%, rgba(0,176,255,0.06) 0%, transparent 50%);
+    pointer-events: none;
+  }
+
+  .header { text-align: center; margin-bottom: 48px; position: relative; z-index: 1; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 100px; padding: 6px 16px;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px; letter-spacing: 1.5px;
+    text-transform: uppercase; color: #8A8A9A;
+    margin-bottom: 20px;
+  }
+  .dot {
+    width: 6px; height: 6px;
+    background: #00E676; border-radius: 50%;
+    animation: livePulse 1.5s ease infinite;
+  }
+  @keyframes livePulse {
+    0%,100% { opacity:1; transform:scale(1); }
+    50% { opacity:0.5; transform:scale(1.4); }
+  }
+  .title {
+    font-size: clamp(28px, 5vw, 44px);
+    font-weight: 800; letter-spacing: -1.5px;
+    line-height: 1.1; margin-bottom: 8px;
+  }
+  .subtitle {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px; color: #5A5A6A;
+  }
+
+  .arena {
+    display: flex; gap: 20px;
+    width: 100%; max-width: 640px;
+    position: relative; z-index: 1;
+    margin-bottom: 32px;
+  }
+
+  .card {
+    flex: 1;
+    background: rgba(255,255,255,0.03);
+    border: 1.5px solid rgba(255,255,255,0.08);
+    border-radius: 20px; padding: 32px 24px;
+    text-align: center; cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+    position: relative; overflow: hidden;
+  }
+  .card:hover:not(.locked):not(.selected) {
+    transform: translateY(-4px);
+    border-color: rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.06);
+  }
+  .card.locked { cursor: default; opacity: 0.5; }
+  .card.selected { opacity: 1; }
+  .card.selected.opt-a {
+    border-color: rgba(255,61,0,0.5);
+    background: rgba(255,61,0,0.08);
+    box-shadow: 0 0 40px rgba(255,61,0,0.15);
+  }
+  .card.selected.opt-b {
+    border-color: rgba(0,176,255,0.5);
+    background: rgba(0,176,255,0.08);
+    box-shadow: 0 0 40px rgba(0,176,255,0.15);
+  }
+
+  .emoji {
+    font-size: 48px; margin-bottom: 16px; display: block;
+    transition: transform 0.3s ease;
+  }
+  .card:hover:not(.locked) .emoji { transform: scale(1.15); }
+
+  .label { font-size: 18px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 8px; }
+  .count {
+    font-family: 'Space Mono', monospace;
+    font-size: 32px; font-weight: 700; margin-bottom: 4px;
+    transition: transform 0.2s ease;
+  }
+  .count.bumped { animation: bump 0.3s ease; }
+  @keyframes bump {
+    0% { transform:scale(1); } 50% { transform:scale(1.2); } 100% { transform:scale(1); }
+  }
+  .pct { font-family: 'Space Mono', monospace; font-size: 12px; color: #6A6A7A; }
+
+  .your-badge {
+    position: absolute; top: 12px; right: 12px;
+    font-family: 'Space Mono', monospace;
+    font-size: 9px; letter-spacing: 1px;
+    text-transform: uppercase; padding: 3px 8px; border-radius: 6px;
+    animation: fadeIn 0.3s ease; display: none;
+  }
+  .card.selected .your-badge { display: block; }
+  .opt-a .your-badge { background: rgba(255,61,0,0.2); color: #FF3D00; }
+  .opt-b .your-badge { background: rgba(0,176,255,0.2); color: #00B0FF; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
+
+  @keyframes popIn {
+    0% { transform:scale(1); } 40% { transform:scale(1.35); } 100% { transform:scale(1); }
+  }
+
+  .bar-container { width:100%; max-width:640px; position:relative; z-index:1; margin-bottom:32px; }
+  .bar-track {
+    display:flex; height:10px; border-radius:10px; overflow:hidden;
+    background: rgba(255,255,255,0.05);
+  }
+  .bar-a {
+    background: linear-gradient(90deg, #FF3D00, #FF6E40);
+    transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+    border-radius: 10px 0 0 10px;
+  }
+  .bar-b {
+    background: linear-gradient(90deg, #0091EA, #00B0FF);
+    transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+    border-radius: 0 10px 10px 0;
+  }
+  .bar-labels {
+    display:flex; justify-content:space-between; margin-top:8px;
+    font-family: 'Space Mono', monospace; font-size: 12px;
+  }
+  .bar-label-a { color: #FF3D00; }
+  .bar-label-b { color: #00B0FF; }
+
+  .activity { width:100%; max-width:640px; position:relative; z-index:1; }
+  .activity-title {
+    font-family: 'Space Mono', monospace; font-size: 10px;
+    letter-spacing: 1.5px; text-transform: uppercase;
+    color: #4A4A5A; margin-bottom: 10px;
+  }
+  .activity-list { display:flex; flex-direction:column; gap:4px; }
+  .activity-item {
+    display:flex; align-items:center; gap:8px;
+    font-family: 'Space Mono', monospace; font-size: 12px; color: #5A5A6A;
+    padding: 6px 10px; border-radius: 8px;
+    background: rgba(255,255,255,0.02);
+    animation: slideIn 0.3s ease;
+  }
+  @keyframes slideIn { from { opacity:0; transform:translateX(-10px); } to { opacity:1; transform:translateX(0); } }
+  .adot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+  .adot.opt-a { background:#FF3D00; }
+  .adot.opt-b { background:#00B0FF; }
+  .you { color:#E8E8ED; font-weight:600; }
+
+  .total {
+    font-family: 'Space Mono', monospace; font-size: 12px;
+    color: #3A3A4A; margin-top: 24px; text-align: center;
+    position: relative; z-index: 1;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="badge"><span class="dot"></span> Live</div>
+  <h1 class="title">Cast Your Vote</h1>
+  <p class="subtitle" id="subtitle">42 votes · Pick a side</p>
+</div>
+
+<div class="arena">
+  <div class="card opt-a" id="card-a" onclick="vote('a')">
+    <div class="your-badge">Your vote</div>
+    <span class="emoji" id="emoji-a">🔥</span>
+    <div class="label">Option A</div>
+    <div class="count" id="count-a" style="color:#FF3D00">24</div>
+    <div class="pct" id="pct-a">57%</div>
+  </div>
+  <div class="card opt-b" id="card-b" onclick="vote('b')">
+    <div class="your-badge">Your vote</div>
+    <span class="emoji" id="emoji-b">💎</span>
+    <div class="label">Option B</div>
+    <div class="count" id="count-b" style="color:#00B0FF">18</div>
+    <div class="pct" id="pct-b">43%</div>
+  </div>
+</div>
+
+<div class="bar-container">
+  <div class="bar-track">
+    <div class="bar-a" id="bar-a" style="width:57%"></div>
+    <div class="bar-b" id="bar-b" style="width:43%"></div>
+  </div>
+  <div class="bar-labels">
+    <span class="bar-label-a" id="blabel-a">57% Option A</span>
+    <span class="bar-label-b" id="blabel-b">Option B 43%</span>
+  </div>
+</div>
+
+<div class="activity">
+  <div class="activity-title">Recent Activity</div>
+  <div class="activity-list" id="feed"></div>
+</div>
+
+<div class="total" id="total"></div>
+
+<script>
+  const state = { a: 24, b: 18, userVote: null };
+
+  function render() {
+    const total = state.a + state.b;
+    const pA = total === 0 ? 50 : Math.round((state.a / total) * 100);
+    const pB = 100 - pA;
+
+    document.getElementById('count-a').textContent = state.a;
+    document.getElementById('count-b').textContent = state.b;
+    document.getElementById('pct-a').textContent = pA + '%';
+    document.getElementById('pct-b').textContent = pB + '%';
+    document.getElementById('bar-a').style.width = pA + '%';
+    document.getElementById('bar-b').style.width = pB + '%';
+    document.getElementById('blabel-a').textContent = pA + '% Option A';
+    document.getElementById('blabel-b').textContent = 'Option B ' + pB + '%';
+
+    const leader = state.a > state.b ? '🔥 A leading' : state.b > state.a ? '💎 B leading' : 'Tied!';
+    document.getElementById('total').textContent = total + ' total votes · ' + leader;
+    document.getElementById('subtitle').textContent = total + ' votes · ' + (state.userVote ? 'You voted!' : 'Pick a side');
+  }
+
+  function bumpCount(id) {
+    const el = document.getElementById('count-' + id);
+    el.classList.remove('bumped');
+    void el.offsetWidth;
+    el.classList.add('bumped');
+  }
+
+  function popEmoji(id) {
+    const el = document.getElementById('emoji-' + id);
+    el.style.animation = 'none';
+    void el.offsetWidth;
+    el.style.animation = 'popIn 0.4s cubic-bezier(0.175,0.885,0.32,1.275)';
+  }
+
+  function addFeedItem(option, isYou) {
+    const feed = document.getElementById('feed');
+    const item = document.createElement('div');
+    item.className = 'activity-item';
+    const name = isYou ? '<span class="you">You</span>' : 'Someone';
+    const optLabel = option === 'a' ? 'Option A 🔥' : 'Option B 💎';
+    item.innerHTML = '<span class="adot opt-' + option + '"></span>' + name + ' voted for ' + optLabel;
+    feed.insertBefore(item, feed.firstChild);
+    while (feed.children.length > 5) feed.removeChild(feed.lastChild);
+  }
+
+  function vote(option) {
+    if (state.userVote) return;
+    state.userVote = option;
+    state[option]++;
+
+    const cardA = document.getElementById('card-a');
+    const cardB = document.getElementById('card-b');
+
+    if (option === 'a') {
+      cardA.classList.add('selected');
+      cardB.classList.add('locked');
+    } else {
+      cardB.classList.add('selected');
+      cardA.classList.add('locked');
+    }
+
+    bumpCount(option);
+    popEmoji(option);
+    addFeedItem(option, true);
+    render();
+  }
+
+  // Simulate real-time votes from other users
+  function simulateVote() {
+    const option = Math.random() > 0.5 ? 'a' : 'b';
+    state[option]++;
+    bumpCount(option);
+    popEmoji(option);
+    addFeedItem(option, false);
+    render();
+    setTimeout(simulateVote, 2200 + Math.random() * 1800);
+  }
+
+  render();
+  setTimeout(simulateVote, 1500);
+</script>
+</body>
+</html>
